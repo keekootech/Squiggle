@@ -184,6 +184,8 @@ canvas#fx{position:fixed;inset:0;pointer-events:none;z-index:50}
   color:rgba(242,237,227,.42);letter-spacing:.3px}
 .credit a{color:var(--amber);text-decoration:none;font-weight:800;
   border-bottom:1.5px solid rgba(255,176,32,.4);padding-bottom:1px}
+.credit .ver{display:block;margin-top:4px;font-size:10px;font-weight:700;
+  color:rgba(242,237,227,.22);letter-spacing:1px}
 
 #dbg{position:fixed;left:0;right:0;bottom:0;max-height:38vh;overflow:auto;background:#000D;
   color:#7FE3A8;font-family:ui-monospace,monospace;font-size:11px;font-weight:400;
@@ -296,7 +298,7 @@ canvas#fx{position:fixed;inset:0;pointer-events:none;z-index:50}
   <button class="ghost" id="bHome">Back to home</button>
 </div>
 
-<div class="credit">Developed by <a href="https://keekootech.in/" target="_blank" rel="noopener">Kee Koo Tech</a></div>
+<div class="credit">Developed by <a href="https://keekootech.in/" target="_blank" rel="noopener">Kee Koo Tech</a><span class="ver" id="ver"></span></div>
 
 <div class="banner" id="banner"><div class="bl">GUESSED</div><div class="bn">Name</div></div>
 <canvas id="fx"></canvas>
@@ -315,7 +317,9 @@ const FIREBASE_CONFIG = {
   appId: "1:740991786280:web:3f0d75e9b612ec7731441d"
 };
 
+const BUILD='v7';
 const $=i=>document.getElementById(i);
+$('ver').textContent=BUILD;
 const dbgEl=$('dbg');let dbgOn=false;
 function log(m,bad){const d=document.createElement('div');
   d.textContent=new Date().toLocaleTimeString().slice(0,8)+'  '+m;
@@ -331,6 +335,7 @@ document.querySelector('.credit').addEventListener('click',e=>{
   if(creditTaps>=5){creditTaps=0;$('dbgBtn').style.display='grid';
     dbgOn=true;dbgEl.style.display='block';log('debug unlocked')}
 });
+log('build '+BUILD);
 window.onerror=(m,s,l)=>log('ERROR '+m+' @'+l,true);
 window.onunhandledrejection=e=>log('PROMISE '+(e.reason&&e.reason.message||e.reason),true);
 
@@ -478,6 +483,7 @@ function listen(){
   }));
   unsub.push(fx.onChildChanged(R('draw/'+room+'/strokes'),s=>{
     const st=s.val();if(!st)return;
+    log('stroke update in: '+(st.p?st.p.length/2:0)+' pts');
     if(s.key===pendingKey)return;              /* my own live stroke - already on screen */
     const i=strokes.findIndex(x=>x.k===s.key);
     st.k=s.key;
@@ -595,7 +601,8 @@ function renderTurn(){
 function startTicker(){
   if(ticker)return;
   ticker=setInterval(()=>{
-    if(!G.endsAt||G.status!=='drawing'){$('clock').textContent='\u2013';return}
+    if(G.status==='reveal'){$('clock').textContent='\u2713';$('clock').classList.remove('low');return}
+    if(!G.endsAt||G.status!=='drawing'){$('clock').textContent='\u2013';$('clock').classList.remove('low');return}
     const left=Math.max(0,Math.ceil((G.endsAt-Date.now())/1000));
     $('clock').textContent=left;
     $('clock').classList.toggle('low',left<=10);
@@ -613,11 +620,32 @@ function say(text){fx.push(R('draw/'+room+'/chat'),{sys:1,text:text,at:Date.now(
 
 /* ================= guessing ================= */
 const norm=s=>s.toLowerCase().replace(/[^a-z]/g,'');
+function lev(a,b){
+  const m=a.length,n=b.length;
+  if(!m)return n; if(!n)return m;
+  let prev=Array.from({length:n+1},(_,j)=>j),cur=new Array(n+1);
+  for(let i=1;i<=m;i++){
+    cur[0]=i;
+    for(let j=1;j<=n;j++){
+      cur[j]=Math.min(prev[j]+1,cur[j-1]+1,prev[j-1]+(a[i-1]===b[j-1]?0:1));
+    }
+    [prev,cur]=[cur,prev];
+  }
+  return prev[n];
+}
+/* close enough to count: short words must be exact, longer ones get slack */
+function closeEnough(g,w){
+  if(!g||!w)return false;
+  if(g===w)return true;
+  if(g===w+'s'||g+'s'===w)return true;          /* plural */
+  if(w.length<5)return false;                    /* cat / car / cap stay distinct */
+  return lev(g,w)<=(w.length>=8?2:1);
+}
 async function sendGuess(){
   const el=$('guessIn'),g=el.value.trim();
   if(!g||myTurn||G.status!=='drawing'||solved[me.id])return;
   el.value='';
-  if(norm(g)===norm(G.word||'')){
+  if(closeEnough(norm(g),norm(G.word||''))){
     const left=Math.max(0,(G.endsAt-Date.now())/1000);
     const pts=Math.round(30+70*(left/G.secs));
     const res=await fx.runTransaction(R('draw/'+room+'/solved/'+me.id),c=>
@@ -638,9 +666,13 @@ async function bump(id,pts){
 }
 let ending=false;
 async function maybeEndRound(){
-  if(!isHost||ending||G.status!=='drawing')return;
+  if(!isHost){log('endRound: not host');return}
+  if(ending){log('endRound: already ending');return}
+  if(G.status!=='drawing'){log('endRound: status='+G.status);return}
   const guessers=Object.keys(players).filter(id=>id!==G.drawer);
-  if(!guessers.length||!guessers.every(id=>solved[id]))return;
+  const got=guessers.filter(id=>solved[id]).length;
+  log('endRound: '+got+'/'+guessers.length+' guessers solved');
+  if(!guessers.length||got<guessers.length)return;
   ending=true;
   await fx.update(R('draw/'+room),{status:'reveal'});
   say('Everyone got it! The word was '+G.word);
@@ -708,6 +740,10 @@ function move(e){
 function end(){
   if(!drawing)return;drawing=false;
   clearTimeout(flushT);flushT=null;
+  if(localStroke&&localStroke.p.length===2){   /* a plain tap - nudge it so it renders as a dot */
+    localStroke.p.push(localStroke.p[0]+.001,localStroke.p[1]);
+  }
+  log('stroke done: '+(localStroke?localStroke.p.length/2:0)+' pts, key '+(pendingKey||'none').slice(0,6));
   flush();                                     /* write the complete stroke */
   localStroke=null;pendingKey=null;
 }
