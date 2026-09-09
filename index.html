@@ -132,7 +132,8 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bor
 
 .pad{background:var(--paper);border-radius:10px;position:relative;overflow:hidden;
   box-shadow:0 8px 0 rgba(0,0,0,.25),0 12px 26px rgba(0,0,0,.35);touch-action:none}
-#cv{display:block;width:100%;height:auto;touch-action:none}
+#cv{display:block;width:100%;height:auto;touch-action:none;cursor:crosshair;
+  user-select:none;-webkit-user-select:none;-webkit-user-drag:none}
 .padmsg{position:absolute;inset:0;display:none;place-items:center;text-align:center;padding:22px;
   background:rgba(28,39,51,.94);color:var(--chalk)}
 .padmsg.on{display:grid}
@@ -458,7 +459,7 @@ function listen(){
     else if(G.status==='done'){endGame()}
     else{
       if(!$('sGame').classList.contains('on'))show('sGame');
-      if(G.drawer!==prevDrawer){strokes=[];redraw();announced={};$('feed').innerHTML=''}
+      if(G.drawer!==prevDrawer){strokes=[];redraw();announced={};ending=false;$('feed').innerHTML=''}
       renderTurn();startTicker();
     }
   }));
@@ -467,10 +468,25 @@ function listen(){
     Object.entries(v).forEach(([id,d])=>{
       if(!announced[id]){announced[id]=true;onSolved(id,d)}
     });
-    solved=v;renderScores();
+    solved=v;renderScores();renderTurn();
+    if(isHost)maybeEndRound();
   }));
   unsub.push(fx.onChildAdded(R('draw/'+room+'/strokes'),s=>{
-    const st=s.val();if(!st)return;strokes.push(st);drawStroke(st);
+    const st=s.val();if(!st)return;
+    if(strokes.some(x=>x.k===s.key))return;
+    st.k=s.key;strokes.push(st);drawStroke(st);
+  }));
+  unsub.push(fx.onChildChanged(R('draw/'+room+'/strokes'),s=>{
+    const st=s.val();if(!st)return;
+    if(s.key===pendingKey)return;              /* my own live stroke - already on screen */
+    const i=strokes.findIndex(x=>x.k===s.key);
+    st.k=s.key;
+    if(i<0)strokes.push(st);else strokes[i]=st;
+    queueRedraw();
+  }));
+  unsub.push(fx.onChildRemoved(R('draw/'+room+'/strokes'),s=>{
+    const i=strokes.findIndex(x=>x.k===s.key);
+    if(i>=0){strokes.splice(i,1);queueRedraw()}
   }));
   unsub.push(fx.onValue(R('draw/'+room+'/strokes'),s=>{
     if(!s.val()){strokes=[];redraw()}
@@ -549,7 +565,7 @@ function renderTurn(){
   const dn=players[G.drawer]?players[G.drawer].name:'\u2026';
   $('rndBox').innerHTML='R'+G.round+'<br>of '+G.rounds;
   $('tools').classList.toggle('on',myTurn&&G.status==='drawing');
-  $('guessbar').style.display=myTurn?'none':'flex';
+  $('guessbar').style.display=(myTurn||solved[me.id])?'none':'flex';
 
   if(G.status==='choosing'){
     $('padmsg').classList.add('on');$('choices').innerHTML='';
@@ -572,7 +588,7 @@ function renderTurn(){
   const w=G.word||'';
   if(myTurn)$('wordBox').innerHTML=esc(w.toUpperCase())+'<small>YOU ARE DRAWING</small>';
   else if(solved[me.id])$('wordBox').innerHTML=esc(w.toUpperCase())+'<small>YOU GOT IT \u2713</small>';
-  else $('wordBox').innerHTML=mask(w,revealed())+'<small>'+w.replace(/ /g,'').length+
+  else $('wordBox').innerHTML=mask(w.toUpperCase(),revealed())+'<small>'+w.replace(/ /g,'').length+
     ' LETTERS \u00b7 '+esc(dn)+' DRAWING</small>';
 }
 
@@ -585,10 +601,11 @@ function startTicker(){
     $('clock').classList.toggle('low',left<=10);
     if(left<=10&&left>0)blip(440,.05,'square',.05);
     if(!myTurn&&!solved[me.id])renderTurn();
-    if(left===0&&isHost){
+    if(left===0&&isHost&&!ending){
+      ending=true;
       fx.update(R('draw/'+room),{status:'reveal'});
       say('Time up! The word was '+G.word);
-      setTimeout(nextTurn,3500);
+      setTimeout(()=>{ending=false;nextTurn()},3500);
     }
   },1000);
 }
@@ -609,7 +626,6 @@ async function sendGuess(){
       await bump(me.id,pts);
       await bump(G.drawer,20);
       say(me.name+' guessed it! (+'+pts+')');
-      checkAllSolved();
     }
     return;
   }
@@ -620,14 +636,15 @@ async function sendGuess(){
 async function bump(id,pts){
   await fx.runTransaction(R('draw/'+room+'/players/'+id+'/score'),c=>(c||0)+pts);
 }
-async function checkAllSolved(){
-  if(!isHost)return;
-  const s=await fx.get(R('draw/'+room+'/solved'));
-  if(Object.keys(s.val()||{}).length>=Object.keys(players).length-1){
-    await fx.update(R('draw/'+room),{status:'reveal'});
-    say('Everyone got it! The word was '+G.word);
-    setTimeout(nextTurn,3000);
-  }
+let ending=false;
+async function maybeEndRound(){
+  if(!isHost||ending||G.status!=='drawing')return;
+  const guessers=Object.keys(players).filter(id=>id!==G.drawer);
+  if(!guessers.length||!guessers.every(id=>solved[id]))return;
+  ending=true;
+  await fx.update(R('draw/'+room),{status:'reveal'});
+  say('Everyone got it! The word was '+G.word);
+  setTimeout(()=>{ending=false;nextTurn()},3000);
 }
 function onSolved(id,d){
   const b=$('banner');
@@ -660,14 +677,21 @@ function drawStroke(s){
   ctx.stroke();
 }
 function redraw(){clearPad();strokes.forEach(drawStroke)}
+let rafQ=false;
+function queueRedraw(){
+  if(rafQ)return;rafQ=true;
+  requestAnimationFrame(()=>{rafQ=false;redraw()});
+}
+const clamp=v=>v<0?0:v>1?1:v;
 function pos(e){
   const r=cv.getBoundingClientRect(),t=e.touches?e.touches[0]:e;
-  return [(t.clientX-r.left)/r.width,(t.clientY-r.top)/r.height];
+  return [clamp((t.clientX-r.left)/r.width),clamp((t.clientY-r.top)/r.height)];
 }
 let drawing=false,flushT=null,pendingKey=null;
 function begin(e){
   if(!myTurn||G.status!=='drawing')return;
   e.preventDefault();drawing=true;
+  try{cv.setPointerCapture(e.pointerId)}catch(_){}
   localStroke={c:color,w:width,p:pos(e)};
   pendingKey=fx.push(R('draw/'+room+'/strokes')).key;
 }
@@ -683,8 +707,9 @@ function move(e){
 }
 function end(){
   if(!drawing)return;drawing=false;
-  flush();flushT=null;
-  strokes.push(localStroke);localStroke=null;pendingKey=null;
+  clearTimeout(flushT);flushT=null;
+  flush();                                     /* write the complete stroke */
+  localStroke=null;pendingKey=null;
 }
 function flush(){
   flushT=null;
@@ -693,9 +718,12 @@ function flush(){
     {c:localStroke.c,w:localStroke.w,p:localStroke.p.slice()}).catch(()=>{});
 }
 cv.addEventListener('pointerdown',begin);
-cv.addEventListener('pointermove',move);
+addEventListener('pointermove',move,{passive:false});
 addEventListener('pointerup',end);
 addEventListener('pointercancel',end);
+addEventListener('blur',end);
+cv.addEventListener('dragstart',e=>e.preventDefault());
+cv.addEventListener('contextmenu',e=>{if(myTurn)e.preventDefault()});
 
 document.querySelectorAll('.sw').forEach(b=>b.onclick=()=>{
   color=b.dataset.c;
@@ -707,11 +735,10 @@ document.querySelectorAll('.sz').forEach(b=>b.onclick=()=>{
 });
 $('bClear').onclick=()=>{if(myTurn)fx.set(R('draw/'+room+'/strokes'),null)};
 $('bUndo').onclick=async()=>{
-  if(!myTurn)return;
+  if(!myTurn||drawing)return;
   const s=await fx.get(R('draw/'+room+'/strokes'));
   const keys=Object.keys(s.val()||{});
   if(keys.length)await fx.set(R('draw/'+room+'/strokes/'+keys[keys.length-1]),null);
-  strokes.pop();redraw();
 };
 
 /* ================= end ================= */
