@@ -129,6 +129,9 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bor
 .clock.low{background:var(--coral);color:#fff;animation:tick 1s infinite}
 @keyframes tick{0%,100%{transform:scale(1)}50%{transform:scale(1.09)}}
 .rnd{flex:0 0 auto;font-size:11.5px;color:rgba(242,237,227,.55);text-align:center;font-weight:700}
+.snd{width:34px;height:34px;padding:0;margin:5px 0 0;border-radius:50%;font-size:15px;
+  background:var(--board);box-shadow:0 3px 0 var(--board-dk);line-height:1}
+.snd[aria-pressed="false"]{opacity:.45}
 
 .pad{background:var(--paper);border-radius:10px;position:relative;overflow:hidden;
   box-shadow:0 8px 0 rgba(0,0,0,.25),0 12px 26px rgba(0,0,0,.35);touch-action:none}
@@ -279,7 +282,8 @@ canvas#fx{position:fixed;inset:0;pointer-events:none;z-index:50}
   <div class="bar">
     <div class="clock" id="clock">&ndash;</div>
     <div class="word" id="wordBox">&ndash;<small></small></div>
-    <div class="rnd" id="rndBox">R1</div>
+    <div class="rnd"><div id="rndBox">R1</div>
+      <button id="bSnd" class="snd" aria-label="Sound" aria-pressed="true">&#128266;</button></div>
   </div>
   <div class="slate">
   <div class="pad">
@@ -348,7 +352,7 @@ const FIREBASE_CONFIG = {
   appId: "1:740991786280:web:3f0d75e9b612ec7731441d"
 };
 
-const BUILD='v9';
+const BUILD='v10';
 const $=i=>document.getElementById(i);
 $('ver').textContent=BUILD;
 const dbgEl=$('dbg');let dbgOn=false;
@@ -392,44 +396,47 @@ const esc=s=>String(s).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[
 
 /* ================= words ================= */
 const EASY=(
-"sun moon star cloud rain tree flower leaf apple banana mango grapes ball bat kite house "+
-"door window key clock chair table bed cup plate spoon fork book pen pencil bag shoe sock "+
-"hat shirt glasses watch ring car bus train boat plane cycle road bridge hill river fish "+
-"bird cat dog cow goat horse duck hen egg milk bread cake pizza burger candy tea coffee "+
-"water fire ice snow eye ear nose mouth hand foot hair heart smile baby phone laptop fan "+
-"bulb brush comb soap towel bucket ladder rope box gift balloon flag drum bell umbrella cap "+
-"mask bone ant bee frog snake elephant monkey lion tiger rabbit mouse pig sheep spider crab "+
-"crown ghost robot king queen island rainbow snowman guitar camera mirror candle pillow "+
-"blanket football chess doctor teacher farmer police cook driver ship tent well pot lamp "+
-"nail hammer scissors button pocket sofa kettle ").trim().split(/\s+/);
+"sun,moon,star,cloud,rain,tree,flower,leaf,apple,banana,mango,grapes,ball,bat,kite,house,"+
+"door,window,key,clock,chair,table,bed,cup,plate,spoon,fork,book,pen,pencil,bag,shoe,sock,"+
+"hat,shirt,glasses,watch,ring,car,bus,train,boat,plane,cycle,road,bridge,hill,river,fish,"+
+"bird,cat,dog,cow,goat,horse,duck,hen,egg,milk,bread,cake,pizza,burger,candy,tea,coffee,"+
+"fire,ice,snow,eye,ear,nose,mouth,hand,foot,hair,heart,smile,baby,phone,laptop,fan,bulb,"+
+"brush,comb,soap,towel,bucket,ladder,rope,box,gift,balloon,flag,drum,bell,umbrella,cap,"+
+"mask,bone,ant,bee,frog,snake,elephant,monkey,lion,tiger,rabbit,mouse,pig,sheep,spider,"+
+"crab,crown,ghost,robot,king,queen,island,rainbow,snowman,guitar,camera,mirror,candle,"+
+"pillow,blanket,football,chess,doctor,teacher,farmer,police,cook,driver,ship,tent,well,pot,"+
+"lamp,nail,hammer,scissors,button,sofa,kettle,").split(',').map(w=>w.trim()).filter(Boolean);
 const MED=(
-"rickshaw samosa temple cricket tabla sitar rangoli lantern coconut parrot camel buffalo "+
-"spectacles moustache turban saree kurta chappal suitcase lighthouse windmill fountain "+
-"jalebi laddu dosa idli watermelon pineapple drums flute microphone headphones television "+
-"fridge toothbrush calendar envelope stamp basketball badminton carrom kabaddi fireman "+
-"postman barber giraffe zebra penguin dolphin octopus snail mountain waterfall volcano "+
-"thunder pirate alien wizard treasure haircut sneeze yawn selfie wedding birthday cooker "+
-"autorickshaw peacock butterfly scooter aeroplane rocket helicopter tractor ambulance "+
-"submarine anchor compass telescope microscope skeleton pyramid castle hammock chandelier "+
-"scarecrow lipstick necklace bangle anklet earring wallet passport binoculars stethoscope "+
-"thermometer parachute trophy medal puzzle dominoes marbles waiter tailor plumber painter "+
-"dancer singer magician juggler astronaut mermaid dinosaur unicorn dragon vampire snowfall "+
-"sandcastle treehouse windchime birdcage aquarium fireworks carousel escalator vending "+
-"typewriter gramophone hourglass chessboard rollercoaster ").trim().split(/\s+/);
+"rickshaw,samosa,temple,cricket,tabla,sitar,rangoli,lantern,coconut,parrot,camel,buffalo,"+
+"spectacles,moustache,turban,saree,kurta,chappal,suitcase,lighthouse,windmill,fountain,"+
+"jalebi,laddu,dosa,idli,watermelon,pineapple,microphone,headphones,television,fridge,"+
+"toothbrush,calendar,envelope,stamp,basketball,badminton,carrom,kabaddi,fireman,postman,"+
+"barber,giraffe,zebra,penguin,dolphin,octopus,snail,mountain,waterfall,volcano,pirate,"+
+"alien,wizard,treasure,haircut,sneeze,yawn,selfie,wedding,birthday,autorickshaw,peacock,"+
+"butterfly,scooter,aeroplane,rocket,helicopter,tractor,ambulance,submarine,anchor,compass,"+
+"telescope,microscope,skeleton,pyramid,castle,hammock,scarecrow,lipstick,necklace,bangle,"+
+"anklet,earring,wallet,passport,binoculars,stethoscope,thermometer,parachute,trophy,medal,"+
+"dominoes,marbles,waiter,tailor,plumber,painter,dancer,singer,magician,juggler,astronaut,"+
+"mermaid,dinosaur,unicorn,dragon,vampire,mehendi,kulfi,paneer,biryani,pakora,chutney,diya,"+
+"tiffin,hourglass,typewriter,gramophone,chandelier,").split(',').map(w=>w.trim()).filter(Boolean);
 const HARD=(
-"gravity shadow echo balance jealousy patience gossip nightmare daydream teamwork blackmail "+
-"overtime deadline promotion interview resignation inflation election protest pilgrimage "+
-"monsoon drought eclipse magnet labyrinth hurricane avalanche glacier desert oasis mirage "+
-"mehendi baraat sangeet tiffin dabbawala kulfi falooda paneer biryani pakora chutney namaste "+
-"diya kolam gulmohar juggling snoring tickling whispering arguing bargaining gossiping "+
-"stretching meditating negotiating celebrating apologising complaining daydreaming "+
-"eavesdropping procrastinating exaggerating hesitating pretending confessing forgiving "+
-"boasting sulking panicking rehearsing improvising translating recycling multitasking "+
-"oversleeping loitering nostalgia deja curiosity confidence loneliness ambition regret "+
-"gratitude suspense chaos silence infinity fragile invisible upside slippery frozen melting "+
-"floating shrinking exploding vanishing reflection illusion silhouette horizon whirlpool "+
-"quicksand earthquake blizzard stampede migration hibernation camouflage metamorphosis "+
-"constellation archaeology democracy bureaucracy monopoly ").trim().split(/\s+/);
+"traffic jam,power cut,hot air balloon,roller coaster,washing machine,sewing machine,"+
+"fire extinguisher,traffic signal,petrol pump,school bus,wedding cake,birthday candles,"+
+"ice cream cart,chai stall,barber shop,spiral staircase,ceiling fan,pressure cooker,"+
+"mixer grinder,water tank,clothes line,dish antenna,cricket stadium,movie theatre,"+
+"railway station,bus stop,post office,temple bell,kite flying,tug of war,arm wrestling,"+
+"piggyback ride,hide and seek,musical chairs,skipping rope,hopscotch,see saw,"+
+"merry go round,ferris wheel,water slide,sand castle,camp fire,tree house,bird cage,"+
+"fish tank,bee hive,spider web,ant hill,bird nest,traffic police,street light,"+
+"speed breaker,zebra crossing,railway crossing,ticket counter,vegetable market,"+
+"fruit basket,shopping cart,cash register,piggy bank,treasure map,message in a bottle,"+
+"paper boat,paper plane,dream catcher,wind chime,alarm clock,grandfather clock,sun dial,"+
+"weighing scale,magnifying glass,swiss knife,tool box,first aid kit,fire truck,tow truck,"+
+"cement mixer,crane,bulldozer,forklift,steam engine,cable car,rickshaw stand,fuel gauge,"+
+"dart board,bowling alley,pool table,vending machine,photo booth,ferris ride,swimming pool,"+
+"diving board,life jacket,scuba diver,fishing rod,bird watching,mountain climbing,"+
+"horse riding,ice skating,roller skates,skateboard ramp,tightrope walker,human pyramid,"+
+"relay race,podium,starting block,finish line,referee whistle,").split(',').map(w=>w.trim()).filter(Boolean);
 const TIER=new Map();
 EASY.forEach(w=>TIER.set(w,1));MED.forEach(w=>TIER.set(w,2));HARD.forEach(w=>TIER.set(w,3));
 const tierOf=w=>TIER.get(String(w||'').toLowerCase())||2;
@@ -460,12 +467,34 @@ function burst(n){for(let i=0;i<n;i++)bits.push({x:innerWidth/2,y:innerHeight*.3
   requestAnimationFrame(loop)})();
 
 let AC=null;
-function ac(){if(!AC)AC=new (window.AudioContext||window.webkitAudioContext)();return AC}
-function blip(f,d,t,v){try{const c=ac(),o=c.createOscillator(),g=c.createGain();
+function ac(){
+  if(!AC)AC=new (window.AudioContext||window.webkitAudioContext)();
+  if(AC.state==='suspended')AC.resume().catch(()=>{});
+  return AC;
+}
+function blip(f,d,t,v){if(muted)return;try{const c=ac(),o=c.createOscillator(),g=c.createGain();
   o.type=t||'triangle';o.frequency.value=f;g.gain.setValueAtTime(v||.14,c.currentTime);
   g.gain.exponentialRampToValueAtTime(.001,c.currentTime+(d||.13));
   o.connect(g);g.connect(c.destination);o.start();o.stop(c.currentTime+(d||.13))}catch(e){}}
 function ding(){[660,880,1180].forEach((f,i)=>setTimeout(()=>blip(f,.2,'square',.12),i*80))}
+/* --- sound --- */
+let muted=false;
+try{muted=localStorage.getItem('sq_mute')==='1'}catch(e){}
+function setMute(m){
+  muted=m;
+  try{localStorage.setItem('sq_mute',m?'1':'0')}catch(e){}
+  const b=$('bSnd');
+  if(b){b.textContent=m?'\uD83D\uDD07':'\uD83D\uDD0A';b.setAttribute('aria-pressed',String(!m))}
+}
+function sfxStart(){[523,659,784,1046].forEach((f,i)=>setTimeout(()=>blip(f,.16,'triangle',.10),i*85))}
+function sfxTimeUp(){[440,392,330,247].forEach((f,i)=>setTimeout(()=>blip(f,.24,'sawtooth',.09),i*135))}
+function sfxTick(left){
+  if(left<=5){blip(1046,.06,'square',.10);setTimeout(()=>blip(784,.05,'square',.06),70)}
+  else blip(660,.05,'square',.045);
+}
+function sfxPop(){blip(660+Math.random()*260,.08,'triangle',.13)}
+function sfxJoin(){blip(523,.09,'triangle',.09);setTimeout(()=>blip(784,.11,'triangle',.09),95)}
+function sfxTurn(){blip(392,.12,'triangle',.08);setTimeout(()=>blip(523,.14,'triangle',.08),110)}
 
 /* ================= rooms ================= */
 const code4=()=>{let s='';const A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -525,7 +554,9 @@ function listen(){
     else if(G.status==='done'){endGame()}
     else{
       if(!$('sGame').classList.contains('on'))show('sGame');
-      if(G.drawer!==prevDrawer){strokes=[];redraw();announced={};ending=false;$('feed').innerHTML=''}
+      if(G.drawer!==prevDrawer){strokes=[];redraw();announced={};ending=false;$('feed').innerHTML='';sfxTurn()}
+      if(prevStatus!=='drawing'&&G.status==='drawing')sfxStart();
+      if(prevStatus==='drawing'&&G.status==='reveal'&&!Object.keys(solved).length)sfxTimeUp();
       renderTurn();startTicker();
     }
   }));
@@ -564,8 +595,11 @@ function listen(){
 }
 function clearListeners(){unsub.forEach(u=>{try{u()}catch(e){}});unsub=[]}
 
+let lastCount=0;
 function renderPlayers(){
   const ids=Object.keys(players);
+  if(lastCount&&ids.length>lastCount)sfxJoin();
+  lastCount=ids.length;
   $('lobChip').textContent=ids.length===1?'1 player':ids.length+' players';
   $('lobPlayers').innerHTML='';
   ids.sort((a,b)=>(players[a].joined||0)-(players[b].joined||0)).forEach(id=>{
@@ -669,7 +703,7 @@ function startTicker(){
     const left=Math.max(0,Math.ceil((G.endsAt-Date.now())/1000));
     $('clock').textContent=left;
     $('clock').classList.toggle('low',left<=10);
-    if(left<=10&&left>0)blip(440,.05,'square',.05);
+    if(left<=12&&left>0)sfxTick(left);
     if(!myTurn&&!solved[me.id])renderTurn();
     if(left===0&&isHost&&!ending){
       ending=true;
@@ -768,7 +802,7 @@ function sendReact(e){
   fx.push(R('draw/'+room+'/chat'),{by:me.id,name:me.name,react:e,text:e,at:now}).catch(()=>{});
 }
 document.querySelectorAll('.reacts button').forEach(b=>{
-  b.onclick=()=>{ac();blip(720,.07);sendReact(b.dataset.e)};
+  b.onclick=()=>{ac();sfxPop();sendReact(b.dataset.e)};
 });
 function addMsg(m){
   if(m.react){if(m.by!==me.id)floatEmoji(m.react);return}
@@ -920,6 +954,8 @@ $('bShare').onclick=async()=>{
 };
 /* the guess box lives on the slate now, so the browser scrolls it into view itself.
    we only shrink the pad a little so the drawing stays visible while typing. */
+setMute(muted);
+$('bSnd').onclick=e=>{e.stopPropagation();ac();setMute(!muted);if(!muted)blip(880,.1,'triangle',.12)};
 $('guessIn').addEventListener('focus',()=>{
   document.body.classList.add('kb');
   setTimeout(()=>{try{$('guessbar').scrollIntoView({block:'end',behavior:'smooth'})}catch(e){}},280);
